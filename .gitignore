@@ -1,0 +1,11 @@
+venv
+*.pyc
+.DS_Store
+.env
+spotifyCred.csv
+ug_chords
+ug_chords10
+ug_song_links
+allSongsBasic.csv
+df_playlist.csv
+nChords_scatters.png
