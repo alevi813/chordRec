@@ -2,10 +2,12 @@ venv
 *.pyc
 .DS_Store
 .env
+.ipynb_checkpoints/
 spotifyCred.csv
 ug_chords
 ug_chords10
 ug_song_links
 allSongsBasic.csv
 df_playlist.csv
-nChords_scatters.png
+playlist_df.csv
+misc_extra/
