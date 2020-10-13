@@ -7,18 +7,14 @@ import pandas as pd
 import numpy as np
 # import sqlite3
 
+# import app-specific functions
+from dbCheck_track import *
+from processPlaylist import *
+from chordSimilarity import *
 
-# get spotify credentials
-import spotipy
-spotifyCred = pd.read_csv('spotifyCred.csv')
-from spotipy.oauth2 import SpotifyClientCredentials
-client_credentials_manager = SpotifyClientCredentials(client_id= spotifyCred['0'][0],
-                                                     client_secret= spotifyCred['0'][1])
-sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
-
+# GET THE DATA
 # conn = sqlite3.connect('/Users/aaronlevi/Documents/sql_db/chords_list.db')
 # cur = conn.cursor()
-# get db...
 # song_info = pd.read_sql_query("SELECT * FROM basic_info", conn)
 song_info = pd.read_csv('song_info.csv')
 dblist    = song_info['Song'].tolist()
@@ -28,127 +24,6 @@ allFeatures = pd.read_csv('allFeatures.csv')
 # allFeatures.drop('index', axis=1, inplace=True)
 # isAdv = pd.read_sql_query("SELECT model_isAdv FROM label", conn) 
 isAdv = pd.read_csv('isAdv.csv')
-
-def dbCheck_track(track):
-    known_song   = str(track).split(', ')[1]
-    artist = str(track).split(', ')[0]        
-
-    if known_song.replace(' ', '-').lower() in dblist:
-        knownSong_ix = dblist.index(known_song.replace(' ', '-').lower())
-
-        # get chords and features for the known song
-        known_df = pd.DataFrame(song_info.loc[knownSong_ix]).transpose()
-        known_df['isAdv'] = isAdv.loc[knownSong_ix][0]
-        known_df['nChords'] = allFeatures['n_unique_chords'].loc[knownSong_ix]
-
-    known_df.drop('index', axis=1, inplace=True)
-    known_df.reset_index(drop=True, inplace=True)
-    
-    return known_df
-
-def processPlaylist(pl_link):
-    # get playlist tracks        
-    pl_id   = pl_link.split('playlist/')[1]
-    pl_id   = pl_id.split('?')[0]
-
-    pl_tracks  = []
-    pl_artists = []
-    pl_indb    = []
-
-    results = sp.user_playlist('Spotify', pl_id,
-                                fields='tracks,next,name')
-
-    # check if their in the db
-    for nItem in range(0, len(results['tracks']['items'])):
-        pl_tracks.append(results['tracks']['items'][nItem]['track']['name'].split(' -')[0].replace(' ', '-').lower() )
-        #     pl_tracks.append(results['tracks']['items'][nItem]['track']['name'].replace(' ', '-').lower())
-        pl_artists.append(results['tracks']['items'][nItem]['track']['artists'][0]['name'].replace(' ', '-').lower())
-
-        if pl_tracks[nItem] in dblist:
-            pl_indb.append(dblist.index(pl_tracks[nItem]))
-
-    return pl_indb
-
-
-def chordSimilarity(known_df, input_df):
-    isAdvList = input_df['isAdv'].tolist()
-    targDifficulty = known_df['isAdv'][0]
-
-    if targDifficulty is 1:
-        sameDiff = [i for i, x in enumerate(isAdvList) if x]
-    else:
-        sameDiff = [i for i, x in enumerate(isAdvList) if not x]
-        
-    # narrow to only sameDiff songs
-    sameDiff_df = input_df.loc[sameDiff]
-
-    # get a list of songs with the same or few n unique chords
-    close_n    = sameDiff_df['nChords'] <= known_df['nChords'][0]
-    close_n_ix = [i for i, x in enumerate(close_n) if x]
-
-    close_df = sameDiff_df.loc[close_n_ix]
-    close_df.reset_index(drop=True, inplace=True)
-
-    # if the known song is in the playlist, get rid of it.
-    if known_df['Song'][0] in close_df['Song'].tolist():
-        k_ix = close_df['Song'].tolist().index(known_df['Song'][0].replace(' ', '-').lower())
-
-        close_df.drop(k_ix, axis=0, inplace=True)
-        close_df.reset_index(drop=True, inplace=True)
-
-    # get chords of known song
-    known_chords_list = known_df['Chords'][0].split(',')
-
-    close_nSameChords = []
-    close_propSameChords = []
-
-    far_nSameChords = []
-    far_propSameChords = []
-
-    # compare to list of chords in all other playlist songs
-    for iSong in range(0, len(close_df)):
-        close_nSameChords.append( len([ele for ele in known_chords_list if(ele in close_df['Chords'][iSong].split(','))]) )
-        close_propSameChords.append( len([ele for ele in known_chords_list if(ele in close_df['Chords'][iSong].split(','))]) / len(close_df['Chords'][iSong].split(','))  )
-            
-    # take the ones with the highest proportion overlap        
-    maxOverlap = np.argmax(close_propSameChords)
-    minOverlap = np.argmin(close_propSameChords)
-
-    easy_rec   = close_df.iloc[maxOverlap]
-    medium_rec = close_df.iloc[minOverlap]
-
-    # # DO SAME FOR AN ADVANCED SONG
-    # get index of playlist songs in same class
-    targDifficulty = 1
-
-    if targDifficulty is 1:
-        sameDiff = [i for i, x in enumerate(isAdvList) if x]
-    else:
-        sameDiff = [i for i, x in enumerate(isAdvList) if not x]
-
-    # narrow to only sameDiff songs
-    sameDiff_df = input_df.loc[sameDiff]    
-
-    close_df = sameDiff_df
-    close_df.reset_index(drop=True, inplace=True)
-
-    nSameChords = []
-    propSameChords = []
-    cnt = 1
-
-    for iSong in range(0, len(close_df)):
-        if isinstance(close_df['Chords'][iSong], str):
-            nSameChords.append( len([ele for ele in known_chords_list if(ele in close_df['Chords'][iSong].split(','))]) )
-            propSameChords.append( len([ele for ele in known_chords_list if(ele in close_df['Chords'][iSong].split(','))]) / len(close_df['Chords'][iSong].split(','))  )
-        else:
-            nSameChords.append(0)
-            propSameChords.append(0)
-            
-    maxOverlap = np.argmax(propSameChords)
-
-    hard_rec = close_df.iloc[maxOverlap]    
-
-    return easy_rec, medium_rec, hard_rec
 
 
 # ------------------------------------------------------------------------------
@@ -253,8 +128,11 @@ app.layout = html.Div([
 )
 def getRec(track, playlist):
     # process initial inputs
-    known_df = dbCheck_track(track)
-    pl_indb  = processPlaylist(playlist)
+    known_df, known_ix = dbCheck_track(track, song_info)
+    known_df['isAdv'] = isAdv.loc[known_ix][0]
+    known_df['nChords'] = allFeatures['n_unique_chords'].loc[known_ix]
+
+    pl_indb  = processPlaylist(playlist, dblist)
 
     # get chords and features for playlist songs in db
     input_df = song_info.loc[pl_indb]
